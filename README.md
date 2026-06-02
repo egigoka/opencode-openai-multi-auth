@@ -121,6 +121,7 @@ All accounts are pooled - when one person's account is rate limited, the plugin 
 | `OPENCODE_OPENAI_DEBUG=1` | Enable debug logging | Off |
 | `OPENCODE_OPENAI_STRATEGY` | Account selection strategy | `sticky` |
 | `OPENCODE_OPENAI_PID_OFFSET=1` | Offset account selection by PID | Off |
+| `OPENCODE_OPENAI_LOGIN_TIMEOUT_MS` | OAuth login callback timeout (ms) | `300000` (5 min) |
 
 ---
 

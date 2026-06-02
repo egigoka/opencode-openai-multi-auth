@@ -97,3 +97,28 @@ export const AUTH_LABELS = {
 	INSTRUCTIONS_MANUAL:
 		"After logging in, copy the full redirect URL and paste it here.",
 } as const;
+
+/** Poll interval (ms) while waiting for the OAuth callback to arrive */
+export const OAUTH_POLL_INTERVAL_MS = 100;
+
+/** Default timeout (ms) for the OAuth login callback when none is configured */
+export const OAUTH_LOGIN_TIMEOUT_DEFAULT_MS = 5 * 60 * 1000;
+
+/**
+ * Resolve the OAuth login callback timeout from a raw env value.
+ *
+ * Some users need more than the previous fixed 60s to complete a browser
+ * login (2FA, account switching, password managers). Invalid or non-positive
+ * values fall back to {@link OAUTH_LOGIN_TIMEOUT_DEFAULT_MS}.
+ */
+export function resolveOAuthLoginTimeoutMs(
+	raw: string | undefined = process.env.OPENCODE_OPENAI_LOGIN_TIMEOUT_MS,
+): number {
+	const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+	return Number.isFinite(parsed) && parsed > 0
+		? parsed
+		: OAUTH_LOGIN_TIMEOUT_DEFAULT_MS;
+}
+
+/** Timeout (ms) for waiting on the OAuth callback, overridable via OPENCODE_OPENAI_LOGIN_TIMEOUT_MS */
+export const OAUTH_LOGIN_TIMEOUT_MS = resolveOAuthLoginTimeoutMs();
