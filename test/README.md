@@ -4,15 +4,17 @@ This directory contains the comprehensive test suite for the OpenAI Codex OAuth 
 
 ## Test Structure
 
-```
-test/
-├── README.md                      # This file
-├── auth.test.ts                   # OAuth authentication tests
-├── config.test.ts                 # Configuration parsing tests
-├── logger.test.ts                 # Logging functionality tests
-├── request-transformer.test.ts    # Request transformation tests
-└── response-handler.test.ts       # Response handling tests
-```
+| Test file | Covered area |
+|---|---|
+| `auth.test.ts` | OAuth parsing, JWT decoding, PKCE, and state validation |
+| `config.test.ts` | Global and per-model configuration |
+| `request-transformer.test.ts` | Model normalization, prompts, reasoning, and request transformation |
+| `account-manager-strategy.test.ts` | Selection strategies, default persistence, eligibility, and account removal |
+| `session-bindings.test.ts` | Session binding persistence and validation |
+| `runtime-fetch-parity.test.ts` | First-use default selection and 429 fallback rebinding |
+| `cli.test.ts` | `multiauth` help, validation, lookup, and persistence |
+| `install-script.test.ts` | JSONC installation, uninstall behavior, and Windows paths |
+| Other `*.test.ts` files | Browser, logging, model prompts, status, fetch helpers, and responses |
 
 ## Running Tests
 
@@ -30,48 +32,18 @@ npm run test:ui
 npm run test:coverage
 ```
 
-## Test Coverage
+## Current Test Areas
 
-### auth.test.ts (16 tests)
-Tests OAuth authentication functionality:
-- State generation and uniqueness
-- Authorization input parsing (URL, code#state, query string formats)
-- JWT decoding and payload extraction
-- Authorization flow creation with PKCE
-- URL parameter validation
+- OAuth authentication and token claims.
+- Plugin and model configuration.
+- Request transformation and response handling.
+- Account rotation, cooldowns, and default-account storage.
+- Trimmed, case-insensitive email matching and error behavior.
+- Session default precedence and 429 fallback rebinding.
+- CLI parsing and package binary metadata.
+- Windows path environment behavior.
 
-### config.test.ts (13 tests)
-Tests configuration parsing and merging:
-- Global configuration application
-- Per-model configuration overrides
-- Mixed configuration (global + per-model)
-- Default values and fallbacks
-- Reasoning effort normalization (minimal → low for codex)
-- Lightweight model detection (nano, mini)
-
-### request-transformer.test.ts (30 tests)
-Tests request body transformations:
-- Model name normalization (all variants → gpt-5 or gpt-5-codex)
-- Input filtering (removing stored conversation history)
-- Tool remap message injection
-- Reasoning configuration application
-- Text verbosity settings
-- Encrypted reasoning content inclusion
-- Unsupported parameter removal
-
-### response-handler.test.ts (10 tests)
-Tests SSE to JSON conversion:
-- Content-type header management
-- SSE stream parsing (response.done, response.completed)
-- Malformed JSON handling
-- Empty stream handling
-- Status preservation
-
-### logger.test.ts (5 tests)
-Tests logging functionality:
-- LOGGING_ENABLED constant
-- logRequest function parameter handling
-- Complex data structure support
+Exact totals are intentionally omitted. Run `npm test` for the current result.
 
 ## Test Philosophy
 
@@ -80,13 +52,15 @@ Tests logging functionality:
 3. **No External Dependencies**: Tests use mocked data and don't make real API calls
 4. **Type Safety**: All tests are written in TypeScript with full type checking
 
-## CI/CD Integration
+## Validation Commands
 
-Tests automatically run in GitHub Actions on:
-- Every push to main
-- Every pull request
+```bash
+npm run typecheck
+npm test
+npm run build
+```
 
-The CI workflow tests against multiple Node.js versions (18.x, 20.x, 22.x) to ensure compatibility.
+Tests use mocked data and do not make real OpenAI API calls.
 
 ## Adding New Tests
 

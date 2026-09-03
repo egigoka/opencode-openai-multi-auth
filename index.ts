@@ -60,6 +60,18 @@ function extractPromptCacheKeyFromBody(body: string | undefined): string | undef
   }
 }
 
+function parseRetryAfterMs(value: string | null, now = Date.now()): number | undefined {
+  if (!value) return undefined;
+
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return seconds * 1000;
+  }
+
+  const resetAt = Date.parse(value);
+  return Number.isFinite(resetAt) ? Math.max(0, resetAt - now) : undefined;
+}
+
 let lastToastAccountIndex: number | null = null;
 let lastToastTime = 0;
 const TOAST_DEBOUNCE_MS = 5000;
@@ -196,6 +208,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
 
   const sessionBindingStore = new SessionBindingStore();
   sessionBindingStore.loadFromDisk();
+  const initializedSessionKeys = new Set<string>();
 
   const findAccountByIndex = (index: number): ManagedAccount | null => {
     return accountManager.getAllAccounts().find((acc) => acc.index === index) || null;
@@ -206,7 +219,27 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
     model?: string,
   ): Promise<ManagedAccount | null> => {
     if (!sessionKey) {
-      return accountManager.getNextAvailableAccount(model);
+      return (
+        accountManager.getDefaultAccount(model) ||
+        accountManager.getNextAvailableAccount(model)
+      );
+    }
+
+    if (!initializedSessionKeys.has(sessionKey)) {
+      initializedSessionKeys.add(sessionKey);
+      const defaultAccount = accountManager.getDefaultAccount(model);
+      if (defaultAccount) {
+        sessionBindingStore.set(sessionKey, defaultAccount.index);
+        return defaultAccount;
+      }
+      if (accountManager.getDefaultAccountIndex() !== undefined) {
+        const account =
+          await accountManager.getNextAvailableAccountForNewSession(model);
+        if (account) {
+          sessionBindingStore.set(sessionKey, account.index);
+        }
+        return account;
+      }
     }
 
     const boundIndex = sessionBindingStore.get(sessionKey);
@@ -334,6 +367,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
           account: ManagedAccount,
           input: Request | string | URL,
           init: RequestInit | undefined,
+          sessionKey: string | undefined,
           retryCount = 0,
           triedAccountIndices: Set<number> = new Set(),
         ): Promise<Response> => {
@@ -344,7 +378,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
             const nextAccount = await accountManager.getNextAvailableAccountExcluding(triedAccountIndices);
             if (nextAccount && nextAccount.index !== account.index) {
               await showAccountSwitchToast(account, nextAccount);
-              return executeRequest(nextAccount, input, init, retryCount, triedAccountIndices);
+              return executeRequest(nextAccount, input, init, sessionKey, retryCount, triedAccountIndices);
             }
             return new Response(
               JSON.stringify({
@@ -451,18 +485,19 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
 
           if (response.status === HTTP_STATUS.TOO_MANY_REQUESTS) {
             const retryAfterHeader = response.headers.get("Retry-After");
-            let retryAfterMs: number;
+            let retryAfterMs = parseRetryAfterMs(retryAfterHeader);
 
-            if (retryAfterHeader) {
-              retryAfterMs = parseInt(retryAfterHeader) * 1000;
-            } else {
+            if (retryAfterMs === undefined) {
               try {
                 const cloned = response.clone();
                 const errorBody = (await cloned.json()) as any;
                 const resetTime =
                   errorBody?.error?.details?.resets_at || errorBody?.resets_at;
                 if (resetTime) {
-                  retryAfterMs = new Date(resetTime).getTime() - Date.now();
+                  const parsedResetTime = Date.parse(String(resetTime));
+                  retryAfterMs = Number.isFinite(parsedResetTime)
+                    ? Math.max(0, parsedResetTime - Date.now())
+                    : 60000;
                 } else {
                   retryAfterMs = 60000;
                 }
@@ -472,6 +507,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
             }
 
             accountManager.markRateLimited(account, retryAfterMs, model);
+            await accountManager.saveToDisk();
             await showRateLimitToast(account, retryAfterMs);
 
             if (debugMode) {
@@ -491,8 +527,11 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
               const nextAccount =
                 await accountManager.getNextAvailableAccountExcluding(triedAccountIndices, model);
               if (nextAccount && nextAccount.index !== account.index) {
+                if (sessionKey) {
+                  sessionBindingStore.set(sessionKey, nextAccount.index);
+                }
                 await showAccountSwitchToast(account, nextAccount);
-                return executeRequest(nextAccount, input, init, retryCount + 1, triedAccountIndices);
+                return executeRequest(nextAccount, input, init, sessionKey, retryCount + 1, triedAccountIndices);
               }
             }
           }
@@ -503,7 +542,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
               await accountManager.getNextAvailableAccountExcluding(triedAccountIndices, model);
             if (nextAccount && nextAccount.index !== account.index) {
               await showAccountSwitchToast(account, nextAccount);
-              return executeRequest(nextAccount, input, init, retryCount + 1, triedAccountIndices);
+              return executeRequest(nextAccount, input, init, sessionKey, retryCount + 1, triedAccountIndices);
             }
           }
 
@@ -558,7 +597,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
                     triedAccountIndices.size,
                     accountManager.getAccountCount(),
                   );
-                  return executeRequest(nextAccount, input, init, retryCount, triedAccountIndices);
+                  return executeRequest(nextAccount, input, init, sessionKey, retryCount, triedAccountIndices);
                 }
                 
                 // STEP 2: All accounts tried - fall back to older model
@@ -581,10 +620,10 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
                   const fallbackAccount = await accountManager.getNextAvailableAccount(fallbackModel);
                   if (fallbackAccount) {
                     // Reset tried accounts for the new model
-                    return executeRequest(fallbackAccount, input, modifiedInit, 0, new Set());
+                    return executeRequest(fallbackAccount, input, modifiedInit, sessionKey, 0, new Set());
                   }
                   // If no account available, use current account
-                  return executeRequest(account, input, modifiedInit, retryCount + 1, new Set());
+                  return executeRequest(account, input, modifiedInit, sessionKey, retryCount + 1, new Set());
                 }
               }
             } catch {
@@ -624,7 +663,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
 
             await showAccountToast(account, accountManager.getAccountCount());
 
-            return executeRequest(account, input, init);
+            return executeRequest(account, input, init, sessionKey);
           },
         };
       },

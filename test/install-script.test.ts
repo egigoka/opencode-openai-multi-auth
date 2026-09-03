@@ -9,7 +9,7 @@ const SCRIPT_PATH = resolve(process.cwd(), 'scripts', 'install-opencode-codex-au
 
 const runInstaller = (args: string[], homeDir: string) => {
 	execFileSync(process.execPath, [SCRIPT_PATH, ...args], {
-		env: { ...process.env, HOME: homeDir },
+		env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
 		stdio: 'pipe',
 	});
 };

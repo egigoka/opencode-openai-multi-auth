@@ -69,17 +69,37 @@ opencode auth login
 # Repeat for as many accounts as you have
 ```
 
+### Selecting a Default Account
+
+Install the package globally so the `multiauth` command is available on `PATH`, then select one existing account by email:
+
+```bash
+npm install --global opencode-openai-multi-auth
+multiauth -d user@example.com
+# Equivalent: multiauth --default user@example.com
+```
+
+For a local checkout, build and install that checkout instead:
+
+```bash
+npm run build
+npm install --global .
+multiauth -d user@example.com
+```
+
+Matching trims whitespace and ignores email case. The email must match exactly one configured account. Restart OpenCode after changing the default. Selecting another account replaces the current default; there is no clear-default command.
+
 ### Automatic Rotation
 
-When you hit a rate limit:
+When an OpenAI request reaches a rate limit:
 
-1. Plugin detects 429 (rate limited) response
-2. Marks current account as limited for that model
-3. Keeps the current session on the same account (no mid-turn hot-swap)
-4. Keeps that session/account binding; start a new session to switch accounts
-5. Shows toast notification for account usage and rate limit status
+1. The plugin detects the `429` response.
+2. It persists the account cooldown for the affected model.
+3. It selects an eligible fallback account using the configured strategy.
+4. It rebinds the current session before retrying with the fallback.
+5. Later requests in the same plugin process and session continue using the fallback.
 
-Session bindings are persisted locally so the same `prompt_cache_key` stays on the same account even after plugin process restarts.
+If the default is cooling down, has failed repeatedly, or does not support the requested model, the normal selection strategy chooses an account. A configured default overrides a persisted binding once, at the first observable OpenAI request for that session in a plugin process. OpenCode exposes no `session.selected` hook, so this first request is the initialization boundary. Non-OpenAI providers are unaffected.
 
 ### Account Selection Strategies
 
@@ -125,6 +145,11 @@ All accounts are pooled - when one person's account is rate limited, the plugin 
 ---
 
 ## Account Management
+
+### Set the Default Account
+```bash
+multiauth -d user@example.com
+```
 
 ### View Accounts
 ```bash
@@ -185,6 +210,7 @@ npx -y opencode-openai-multi-auth@latest --uninstall
 ## Features
 
 - **Multi-account rotation** - Add unlimited ChatGPT accounts, auto-rotate on rate limits
+- **Manual default account** - Start OpenAI sessions with a selected account
 - **Per-model rate tracking** - Each model's limits tracked separately per account
 - **Toast notifications** - Visual feedback when accounts switch
 - **OAuth authentication** - Same secure flow as official Codex CLI

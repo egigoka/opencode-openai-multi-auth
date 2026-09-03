@@ -60,7 +60,9 @@ describe("SessionBindingStore", () => {
 		store.loadFromDisk();
 		store.set("ses_secure", 1);
 
-		const mode = statSync(filePath).mode & 0o777;
-		expect(mode).toBe(0o600);
+		if (process.platform !== "win32") {
+			const mode = statSync(filePath).mode & 0o777;
+			expect(mode).toBe(0o600);
+		}
 	});
 });

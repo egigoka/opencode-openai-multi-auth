@@ -60,56 +60,59 @@ This document explains the technical design decisions, architecture, and impleme
 
 ## Multi-Account System
 
-### AccountManager (`lib/accounts/manager.ts`)
+### Module Responsibilities
 
-The AccountManager handles multiple ChatGPT accounts with automatic rotation:
+| Module | Responsibility |
+|---|---|
+| `index.ts` | Plugin entry point, session-aware selection, and retry handling |
+| `lib/cli.ts` | `multiauth` command-line entry point |
+| `lib/accounts/manager.ts` | Account storage, default resolution, strategies, cooldowns, and token refresh |
+| `lib/accounts/types.ts` | Account and storage contracts |
+| `lib/session-bindings.ts` | Persistent session-key to account-index bindings |
+| `lib/secure-file.ts` | Secure JSON persistence |
 
-```typescript
-class AccountManager {
-  // Core state
-  private accounts: ManagedAccount[] = [];
-  private activeIndex = 0;
-  private config: MultiAccountConfig;
-
-  // Key methods
-  async loadFromDisk(): Promise<void>           // Load accounts from JSON
-  async importFromOpenCodeAuth(): Promise<void> // Import from legacy auth
-  async addAccount(...): Promise<ManagedAccount> // Add new account
-  async getNextAvailableAccount(model?): Promise<ManagedAccount | null>
-  markRateLimited(account, retryAfterMs, model?)
-  async ensureValidToken(account): Promise<boolean>
-}
+```mermaid
+flowchart TD
+    CLI[lib/cli.ts] --> Manager[lib/accounts/manager.ts]
+    Plugin[index.ts] --> AccountIndex[lib/accounts/index.ts]
+    AccountIndex --> Manager
+    Plugin --> Bindings[lib/session-bindings.ts]
+    Manager --> Auth[lib/auth/auth.ts]
+    Manager --> Types[lib/accounts/types.ts]
+    Manager --> Secure[lib/secure-file.ts]
+    Bindings --> Secure
+    Plugin --> Request[lib/request/fetch-helpers.ts]
 ```
 
-### Account Selection Flow
+### Default and Fallback Flow
 
+```mermaid
+flowchart TD
+    Request[OpenAI request] --> Key[Extract model and prompt_cache_key]
+    Key --> First{First use of this key in process?}
+    First -->|Yes| Default[Get eligible default]
+    Default -->|Found| BindDefault[Bind session to default]
+    Default -->|Unavailable| Strategy[Run new-session strategy]
+    Strategy --> BindSelected[Bind selected account]
+    First -->|No| Existing[Read existing binding]
+    Existing --> Execute[Execute request]
+    BindDefault --> Execute
+    BindSelected --> Execute
+    Execute --> Status{Response}
+    Status -->|Success| Return[Return response]
+    Status -->|429| Cooldown[Persist cooldown]
+    Cooldown --> Fallback[Select account excluding tried indexes]
+    Fallback --> Rebind[Rebind session before retry]
+    Rebind --> Execute
 ```
-1. Request comes in with model name
-   │
-   ├─▶ getNextAvailableAccount(model)
-   │      │
-   │      ├─▶ Check current account availability
-   │      │      ├─ consecutiveFailures < 3?
-   │      │      ├─ globalRateLimitReset expired?
-   │      │      └─ perModelRateLimit[model] expired?
-   │      │
-   │      ├─▶ If available: use current account
-   │      │
-   │      └─▶ If not: try next accounts in order
-   │             │
-   │             └─▶ If all rate limited: return least-limited
-   │
-   ├─▶ ensureValidToken(account)
-   │      │
-   │      ├─▶ Check expiration (5 min proactive refresh)
-   │      └─▶ Refresh if needed
-   │
-   └─▶ executeRequest(account, input, init)
-          │
-          ├─▶ On 429: markRateLimited() + try next account
-          ├─▶ On 401: markRefreshFailed() + try next account
-          └─▶ On success: return response
-```
+
+The first observable OpenAI request initializes a session because OpenCode exposes no `session.selected` hook. A process-local set ensures that a session rebound after a 429 does not immediately return to its default.
+
+### Default Account Contract
+
+`AccountManager.setDefaultAccount(email)` trims and compares email addresses case-insensitively, requires exactly one match, and persists the matching numeric account index. Unknown or ambiguous input does not modify storage.
+
+`AccountManager.getDefaultAccount(model)` returns `null` when no default is configured or when the configured account is cooling down, has failed at least three times, or does not support the requested model.
 
 ### Account Storage Format
 
@@ -137,9 +140,15 @@ class AccountManager {
       "consecutiveFailures": 0
     }
   ],
-  "activeAccountIndex": 0
+  "activeAccountIndex": 0,
+  "roundRobinCursor": 1,
+  "defaultAccountIndex": 0
 }
 ```
+
+`defaultAccountIndex` is optional, so existing version-1 files remain valid. Removing the selected account clears the default; removing an earlier account decrements the index.
+
+On a `429`, `executeRequest()` records and persists the cooldown before selecting another account. It updates the session binding before recursively retrying, keeping later requests on that fallback for the current process/session.
 
 ### Environment Variables
 

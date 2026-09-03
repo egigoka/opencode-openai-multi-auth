@@ -412,7 +412,7 @@ CODEX_MODE=1 opencode run "task"  # Temporarily enable
 
 ### Account Storage
 
-Accounts are stored in `~/.config/opencode/openai-accounts.json`:
+Accounts are stored in `~/.config/opencode/openai-accounts.json`. The optional `defaultAccountIndex` remains compatible with existing version-1 files:
 
 ```json
 {
@@ -427,9 +427,12 @@ Accounts are stored in `~/.config/opencode/openai-accounts.json`:
       "consecutiveFailures": 0
     }
   ],
-  "activeAccountIndex": 0
+  "activeAccountIndex": 0,
+  "defaultAccountIndex": 0
 }
 ```
+
+The CLI resolves an email against the current account list and stores its numeric index. Removing the selected account clears the default; removing an earlier account decrements the index so it continues to identify the same account.
 
 ### Adding Multiple Accounts
 
@@ -443,10 +446,30 @@ opencode auth login
 # Select "Add Another OpenAI Account"
 ```
 
+### Selecting a Default Account
+
+The package provides `multiauth` when installed globally or linked locally:
+
+```bash
+multiauth -d user@example.com
+# Equivalent: multiauth --default user@example.com
+```
+
+Email matching trims whitespace, ignores case, and requires exactly one match. Unknown or ambiguous emails leave storage unchanged. Restart OpenCode after changing the default. Selecting another email replaces the default; there is no clear-default command.
+
+### Runtime Selection Semantics
+
+For each session, the first observable OpenAI request in a plugin process is the initialization boundary. The configured default is used when it is eligible for the requested model, overriding an existing persisted session binding once.
+
+A default is ineligible when it is in global or model-specific cooldown, has at least three consecutive failures, or does not support the requested model. The configured account strategy selects a fallback in those cases. OpenCode exposes no `session.selected` hook, and non-OpenAI providers do not enter this path.
+
 ### Rate Limit Handling
 
 - Per-model rate limits tracked separately
-- Automatic rotation to next available account
+- Cooldowns persisted before retry
+- Automatic rotation to the next available account
+- Session rebound to the fallback before retry
+- Later requests in the same process and session stay on the fallback
 - Toast notifications show rate limit status
 - Accounts with 3+ consecutive failures are skipped
 
@@ -455,6 +478,7 @@ opencode auth login
 - When OpenCode provides a `prompt_cache_key` (its session identifier), the plugin forwards it directly to Codex.
 - The same value is sent via headers (`conversation_id`, `session_id`) and request body, reducing latency and token usage.
 - The plugin does not synthesize a fallback key; hosts that omit `prompt_cache_key` will see uncached behaviour until they provide one.
+- Requests without a key still prefer an eligible default but do not create a persisted session binding.
 - No configuration needed—cache headers are injected during request transformation.
 
 ### Usage limit messaging
