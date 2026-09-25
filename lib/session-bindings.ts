@@ -62,7 +62,7 @@ export class SessionBindingStore {
 			};
 			writeJsonSecure(this.filePath, payload);
 		} catch {
-			// Persistence failure should not break request handling.
-		}
-	}
+    // Persistence failure should not break request handling.
+    }
+  }
 }

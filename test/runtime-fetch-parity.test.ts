@@ -99,8 +99,32 @@ vi.mock('../lib/session-bindings.js', () => {
 		}
 	}
 
-	return { SessionBindingStore };
+	class SessionBindingStore {
+		loadFromDisk() {}
+		get(key: string) {
+			return sessionBindings.get(key);
+		}
+		set(key: string, value: number) {
+			sessionBindings.set(key, value);
+		}
+		delete(key: string) {
+			sessionBindings.delete(key);
+		}
+	}
+
+	return { SessionBindingStore, SessionContextStore };
 });
+
+function requireAuthLoader(plugin: { auth?: { loader?: unknown } }) {
+	if (typeof plugin.auth?.loader !== 'function') {
+		throw new Error('Expected plugin auth loader to be available');
+	}
+
+	return plugin.auth.loader as (
+		getAuth: () => Promise<unknown>,
+		provider: unknown,
+	) => Promise<{ fetch: (input: string, init: RequestInit) => Promise<Response> }>;
+}
 
 describe('Runtime fetch parity', () => {
 	beforeEach(() => {
