@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { OAuthServerInfo } from "../types.js";
+import { OAUTH_LOGIN_TIMEOUT_MS, OAUTH_POLL_INTERVAL_MS } from "../constants.js";
 
 // Resolve path to oauth-success.html (one level up from auth/ subfolder)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -51,8 +52,12 @@ export function startLocalOAuthServer({ state }: { state: string }): Promise<OAu
 					ready: true,
 					close: () => server.close(),
 					waitForCode: async () => {
-						const poll = () => new Promise<void>((r) => setTimeout(r, 100));
-						for (let i = 0; i < 600; i++) {
+						const poll = () =>
+							new Promise<void>((r) => setTimeout(r, OAUTH_POLL_INTERVAL_MS));
+						const maxAttempts = Math.ceil(
+							OAUTH_LOGIN_TIMEOUT_MS / OAUTH_POLL_INTERVAL_MS,
+						);
+						for (let i = 0; i < maxAttempts; i++) {
 							const lastCode = (server as http.Server & { _lastCode?: string })._lastCode;
 							if (lastCode) return { code: lastCode };
 							await poll();
