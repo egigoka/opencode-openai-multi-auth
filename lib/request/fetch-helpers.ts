@@ -7,7 +7,7 @@ import { release as osRelease } from "node:os";
 import type { Auth } from "@opencode-ai/sdk";
 import type { OpencodeClient } from "@opencode-ai/sdk";
 import { refreshAccessToken } from "../auth/auth.js";
-import { logRequest } from "../logger.js";
+import { logRequest, logDebug } from "../logger.js";
 import { getModelFamily } from "../prompts/codex.js";
 import { transformRequestBody, normalizeModel } from "./request-transformer.js";
 import { convertSseToJson, ensureContentType } from "./response-handler.js";
@@ -253,7 +253,7 @@ export async function handleErrorResponse(
   try {
     const cloned = response.clone();
     const errorBody = await cloned.text();
-    console.error(`[${PLUGIN_NAME}] Error ${response.status}: ${errorBody}`);
+    logDebug(`Error ${response.status}: ${errorBody}`);
   } catch {}
 
   const mapped = await mapUsageLimit404(response);
