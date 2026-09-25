@@ -1,10 +1,12 @@
 ![Image 1: opencode-openai-multi-auth](assets/readme-hero.svg)
 
 [![npm version](https://img.shields.io/npm/v/opencode-openai-multi-auth.svg)](https://www.npmjs.com/package/opencode-openai-multi-auth)
-[![Tests](https://github.com/dkraemerwork/opencode-openai-multi-auth/actions/workflows/ci.yml/badge.svg)](https://github.com/dkraemerwork/opencode-openai-multi-auth/actions)
+[![Tests](https://github.com/egigoka/opencode-openai-multi-auth/actions/workflows/ci.yml/badge.svg)](https://github.com/egigoka/opencode-openai-multi-auth/actions)
 [![npm downloads](https://img.shields.io/npm/dm/opencode-openai-multi-auth.svg)](https://www.npmjs.com/package/opencode-openai-multi-auth)
 
 # Multi-Account ChatGPT OAuth for OpenCode
+
+> **Actively maintained fork**: [egigoka/opencode-openai-multi-auth](https://github.com/egigoka/opencode-openai-multi-auth) (v5.0.7+) — merges upstream PRs, adds default-account selection with session binding, `Retry-After` handling, and quiet 429 rotation (error responses only log with `DEBUG_CODEX_PLUGIN=1`).
 
 **Use multiple ChatGPT Plus/Pro personal or organization accounts with OpenCode. Never hit rate limits again.**
 
@@ -44,7 +46,7 @@ opencode auth login
 # Select "Add Another OpenAI Account"
 
 # Start coding - accounts rotate automatically on rate limits
-opencode run "write hello world to test.txt" --model=openai/gpt-5.2 --variant=medium
+opencode run "write hello world to test.txt" --model=openai/gpt-5.4 --variant=medium
 ```
 
 ---
@@ -139,6 +141,8 @@ All accounts are pooled - when one person's account is rate limited, the plugin 
 |----------|-------------|---------|
 | `OPENCODE_OPENAI_QUIET=1` | Disable toast notifications | Off |
 | `OPENCODE_OPENAI_DEBUG=1` | Enable debug logging | Off |
+| `DEBUG_CODEX_PLUGIN=1` | Verbose plugin debug logging (includes HTTP error responses, which are silent otherwise) | Off |
+| `ENABLE_PLUGIN_REQUEST_LOGGING=1` | Write sanitized request payloads to `~/.opencode/logs/codex-plugin/` (also enables debug logging) | Off |
 | `OPENCODE_OPENAI_STRATEGY` | Account selection strategy | `sticky` |
 | `OPENCODE_OPENAI_PID_OFFSET=1` | Offset account selection by PID | Off |
 | `OPENCODE_OPENAI_LOGIN_TIMEOUT_MS` | OAuth login callback timeout (ms) | `300000` (5 min) |
@@ -173,20 +177,31 @@ cat ~/.config/opencode/openai-accounts.json | jq '.accounts[] | {email, rateLimi
 ```
 Shows usage status for all configured accounts.
 
+```text
+/codex-account-list
+```
+Lists all configured accounts, marking the current session account and the default account.
+
+```text
+/codex-switch-account <index-or-email>
+```
+Switches the current session to a configured account (1-based index or email).
+
 ---
 
 ## Models
 
-All GPT-5.2 and GPT-5.1 models with reasoning variants:
+Model availability is dynamic: the plugin queries the ChatGPT backend (`/models`) per account (cached 5 minutes) and OpenCode registers what the backend advertises. Currently advertised models include:
 
-- **gpt-5.2** (none/low/medium/high/xhigh)
-- **gpt-5.2-codex** (low/medium/high/xhigh)
-- **gpt-5.1-codex-max** (low/medium/high/xhigh)
-- **gpt-5.1-codex** (low/medium/high)
-- **gpt-5.1-codex-mini** (medium/high)
-- **gpt-5.1** (none/low/medium/high)
+- **gpt-5.3-codex-spark**
+- **gpt-5.4** (+ `-fast`, `-mini`, `-mini-fast`)
+- **gpt-5.5** (+ `-fast`)
+- **gpt-5.6** family: `luna`, `sol`, `terra` (+ `-fast` each)
+- **gpt-6** family: `astra`, `luna`, `sol` (+ `-fast` each)
 
-Note: The model selector reflects what the ChatGPT OAuth backend advertises. API-only models (like gpt-5-mini/nano) may not appear until the backend exposes them.
+Reasoning effort is selected with a suffix (`none`/`low`/`medium`/`high`/`xhigh`, e.g. `--model=openai/gpt-5.4 --variant=medium`); the plugin strips the suffix to the backend model slug and clamps `minimal` to `low`. Explicit presets for the GPT-5 through GPT-5.3 families (`codex` / `codex-max` / `codex-mini`) remain mapped for backwards compatibility, and any other `gpt-*` ID passes through as-is.
+
+Note: The model selector reflects what the ChatGPT OAuth backend advertises. API-only models may not appear until the backend exposes them.
 
 ---
 
@@ -211,11 +226,14 @@ npx -y opencode-openai-multi-auth@latest --uninstall
 ## Features
 
 - **Multi-account rotation** - Add unlimited ChatGPT accounts, auto-rotate on rate limits
-- **Manual default account** - Start OpenAI sessions with a selected account
-- **Per-model rate tracking** - Each model's limits tracked separately per account
+- **Manual default account** - Start OpenAI sessions with a selected account (`multiauth -d`)
+- **Session binding** - Sessions stick to their account across prompts, rebind on failover
+- **Per-model rate tracking** - Each model's limits tracked separately per account, cooldowns persisted
+- **`Retry-After` handling** - Numeric and HTTP-date headers parsed, conservative cooldown on malformed values
+- **Quiet 429 rotation** - Rate-limit rotation is silent unless `DEBUG_CODEX_PLUGIN=1`
 - **Toast notifications** - Visual feedback when accounts switch
 - **OAuth authentication** - Same secure flow as official Codex CLI
-- **22 model presets** - All GPT-5.2/5.1 variants pre-configured
+- **Dynamic models** - Backend-advertised models (GPT-5.3-codex-spark, 5.4–5.6, 6.x) plus mapped GPT-5–5.3 presets with reasoning variants
 - **Automatic token refresh** - Never manually re-authenticate
 - **Multimodal support** - Image input enabled for all models
 
@@ -232,7 +250,8 @@ npx -y opencode-openai-multi-auth@latest --uninstall
 
 ## Credits
 
-**Maintained by [ZenysTX](https://x.com/zenysTX)**
+**Fork maintained by [egigoka](https://github.com/egigoka)**
+**Upstream by [ZenysTX](https://x.com/zenysTX)**
 **Original implementation by [Numman Ali](https://x.com/nummanali)**
 **Inspired by [opencode-google-antigravity-auth](https://github.com/shekohex/opencode-google-antigravity-auth)**
 
