@@ -333,6 +333,25 @@ opencode auth login
 
 **Account storage:** `~/.config/opencode/openai-accounts.json`
 
+### Step 2c: Select the Default Account
+
+Install or link the package so `multiauth` is on `PATH`, then select one existing account:
+
+```bash
+npm install --global opencode-openai-multi-auth
+multiauth -d user@example.com
+```
+
+The long option is equivalent:
+
+```bash
+multiauth --default user@example.com
+```
+
+The lookup trims surrounding whitespace, ignores email case, and succeeds only when exactly one configured account matches. Restart OpenCode after the command succeeds because a running plugin process does not reload the setting.
+
+To change the default, run the command with another existing account email. There is no clear-default command.
+
 ### Step 3: Test It
 
 ```bash
@@ -395,20 +414,19 @@ npx -y opencode-openai-multi-auth@latest --uninstall --all
 
 For plugin development or testing unreleased changes:
 
-```json
-{
-  "plugin": ["file:///absolute/path/to/opencode-openai-multi-auth/dist"]
-}
-```
-
-**Note**: Must point to `dist/` folder (built output), not root.
-
-**Build the plugin:**
 ```bash
 cd opencode-openai-multi-auth
 npm install
 npm run build
 ```
+
+Create a JavaScript file in `~/.config/opencode/plugins/` that exports the local build:
+
+```javascript
+export { default } from "file:///absolute/path/to/opencode-openai-multi-auth/dist/index.js";
+```
+
+OpenCode loads files in that directory at startup. Keep the wrapper pointed at `dist/index.js`, then rebuild and restart OpenCode after source changes.
 
 ---
 

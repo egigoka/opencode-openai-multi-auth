@@ -101,6 +101,15 @@ vi.mock("../lib/accounts/index.js", () => {
     async getNextAvailableAccountExcluding() {
       return accounts[0];
     }
+    getDefaultAccount() {
+      return null;
+    }
+    getDefaultAccountIndex() {
+      return undefined;
+    }
+    isAccountAvailableForModel() {
+      return true;
+    }
     async ensureValidToken() {
       return true;
     }

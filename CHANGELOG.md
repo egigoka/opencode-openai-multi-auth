@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented here. Dates use the ISO format (YYYY-MM-DD).
 
+## [Unreleased]
+
+### Added
+- Added `multiauth -d <EMAIL_ADDRESS>` and `multiauth --default <EMAIL_ADDRESS>`.
+- Added optional `defaultAccountIndex` support to version-1 account storage.
+- Added first-use default-account selection for OpenAI sessions.
+
+### Changed
+- Default selection uses trimmed, case-insensitive email matching and requires exactly one matching account.
+- An eligible default overrides a persisted binding once at the first observable OpenAI request in a plugin process.
+- 429 cooldowns are persisted and sessions are rebound to the fallback before retry.
+- Replaced the shell-specific build copy command with a cross-platform Node.js filesystem copy.
+- Made the test harness portable across Windows `HOME` and `USERPROFILE` behavior.
+
+### Fixed
+- Parse both numeric and HTTP-date `Retry-After` headers and use a conservative cooldown for malformed values.
+
+### Notes
+- `multiauth` requires a global or locally linked installation to be directly available on `PATH`.
+- Restart OpenCode after changing the default account.
+- Selecting another account replaces the default; there is no clear-default command.
+- Non-OpenAI providers are unaffected.
+
 ## [5.0.0] - 2026-01-15
 
 **Major release**: Multi-account support with automatic rotation on rate limits.

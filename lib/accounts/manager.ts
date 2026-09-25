@@ -32,6 +32,7 @@ export class AccountManager {
   private accounts: ManagedAccount[] = [];
   private activeIndex = 0;
   private roundRobinCursor = 0;
+  private defaultAccountIndex: number | undefined;
   private strategyInitialized = false;
   private config: MultiAccountConfig;
 
@@ -117,12 +118,21 @@ export class AccountManager {
         this.accounts = data.accounts;
         this.activeIndex = data.activeAccountIndex || 0;
         this.roundRobinCursor = data.roundRobinCursor ?? this.activeIndex;
+        const defaultIndex = data.defaultAccountIndex;
+        this.defaultAccountIndex =
+          typeof defaultIndex === "number" &&
+          Number.isInteger(defaultIndex) &&
+          defaultIndex >= 0 &&
+          defaultIndex < this.accounts.length
+            ? defaultIndex
+            : undefined;
         this.strategyInitialized = false;
       }
     } catch {
       this.accounts = [];
       this.activeIndex = 0;
       this.roundRobinCursor = 0;
+      this.defaultAccountIndex = undefined;
       this.strategyInitialized = false;
     }
   }
@@ -136,6 +146,9 @@ export class AccountManager {
       accounts: this.accounts,
       activeAccountIndex: this.activeIndex,
       roundRobinCursor: this.roundRobinCursor,
+      ...(this.defaultAccountIndex === undefined
+        ? {}
+        : { defaultAccountIndex: this.defaultAccountIndex }),
     };
     writeJsonSecure(ACCOUNTS_FILE, data);
   }
@@ -267,6 +280,36 @@ export class AccountManager {
 
   getAccountCount(): number {
     return this.accounts.length;
+  }
+
+  getDefaultAccount(model?: string): ManagedAccount | null {
+    if (this.defaultAccountIndex === undefined) return null;
+    const account = this.accounts[this.defaultAccountIndex];
+    if (!account) return null;
+    if (model && !this.accountSupportsModel(account, model)) return null;
+    return this.isAccountAvailable(account, model, Date.now()) ? account : null;
+  }
+
+  getDefaultAccountIndex(): number | undefined {
+    return this.defaultAccountIndex;
+  }
+
+  async setDefaultAccount(email: string): Promise<ManagedAccount> {
+    const normalizedEmail = email.trim().toLowerCase();
+    const matches = this.accounts.filter(
+      (account) => account.email?.trim().toLowerCase() === normalizedEmail,
+    );
+
+    if (matches.length === 0) {
+      throw new Error(`No account found for email: ${email.trim()}`);
+    }
+    if (matches.length > 1) {
+      throw new Error(`Multiple accounts found for email: ${email.trim()}`);
+    }
+
+    this.defaultAccountIndex = matches[0].index;
+    await this.saveToDisk();
+    return matches[0];
   }
 
   async getNextAvailableAccount(
@@ -481,6 +524,14 @@ export class AccountManager {
   removeAccount(account: ManagedAccount): void {
     const index = this.accounts.findIndex((a) => a.index === account.index);
     if (index >= 0) {
+      if (this.defaultAccountIndex === index) {
+        this.defaultAccountIndex = undefined;
+      } else if (
+        this.defaultAccountIndex !== undefined &&
+        index < this.defaultAccountIndex
+      ) {
+        this.defaultAccountIndex--;
+      }
       this.accounts.splice(index, 1);
       this.accounts.forEach((a, i) => (a.index = i));
 
@@ -605,14 +656,6 @@ export class AccountManager {
   getActiveAccount(): ManagedAccount | null {
     if (this.accounts.length === 0) return null;
     return this.accounts[this.activeIndex] || this.accounts[0];
-  }
-
-  getAccountByIndex(index: number): ManagedAccount | null {
-    return this.accounts.find((account) => account.index === index) || null;
-  }
-
-  findAccountByEmail(email: string): ManagedAccount | null {
-    return this.accounts.find((account) => account.email === email) || null;
   }
 
   /**

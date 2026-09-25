@@ -29,7 +29,7 @@
     "url": "https://github.com/dkraemerwork/opencode-openai-multi-auth/issues"
   },
   "scripts": {
-    "build": "tsc && cp lib/oauth-success.html dist/lib/",
+    "build": "tsc && node -e \"require('node:fs').copyFileSync('lib/oauth-success.html', 'dist/lib/oauth-success.html')\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -37,7 +37,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "bin": {
-    "opencode-openai-multi-auth": "./scripts/install-opencode-codex-auth.js"
+    "opencode-openai-multi-auth": "./scripts/install-opencode-codex-auth.js",
+    "multiauth": "./dist/lib/cli.js"
   },
   "files": [
     "dist/",

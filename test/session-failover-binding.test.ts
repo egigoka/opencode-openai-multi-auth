@@ -47,13 +47,22 @@ function getNextAvailableAccount(model?: string, exclude: Set<number> = new Set(
 }
 
 vi.mock('@opencode-ai/plugin', () => ({
-	tool: (definition: unknown) => definition,
+	tool: Object.assign((definition: unknown) => definition, {
+		schema: {
+			string: () => ({
+				describe() {
+					return this;
+				},
+			}),
+		},
+	}),
 }));
 
 vi.mock('../lib/accounts/index.js', () => {
 	class AccountManager {
 		async loadFromDisk() {}
 		async importFromOpenCodeAuth() {}
+		async saveToDisk() {}
 		getAllAccounts() {
 			return mockState.accounts;
 		}
@@ -77,6 +86,12 @@ vi.mock('../lib/accounts/index.js', () => {
 		}
 		isAccountAvailableForModel(account: { index: number }, model?: string) {
 			return !getLimitedSet(model).has(account.index);
+		}
+		getDefaultAccount() {
+			return null;
+		}
+		getDefaultAccountIndex() {
+			return undefined;
 		}
 		async ensureValidToken() {
 			return true;
