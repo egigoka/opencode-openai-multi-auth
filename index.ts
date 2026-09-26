@@ -32,6 +32,7 @@ import {
 } from "./lib/request/fetch-helpers.js";
 import { AccountManager } from "./lib/accounts/index.js";
 import type { ManagedAccount } from "./lib/accounts/index.js";
+import { findLegacyCodexAuthFork } from "./lib/conflict.js";
 import { codexStatus } from "./lib/codex-status.js";
 import { prefetchModels } from "./lib/models.js";
 import { SessionContextStore } from "./lib/session-context.js";
@@ -265,6 +266,14 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
 
   await accountManager.loadFromDisk();
   await accountManager.importFromOpenCodeAuth();
+
+  if (!quietMode && findLegacyCodexAuthFork()) {
+    console.warn(
+      '[openai-multi-auth] Conflicting legacy plugin detected at ~/.local/share/opencode-codex-auth. ' +
+        'It also registers provider "openai" and can serve requests instead of this plugin, ' +
+        'causing 404 {"detail":"Not Found"}. Remove "./plugins/codex-auth-fork.js" from opencode.json.',
+    );
+  }
 
   const sessionBindingStore = new SessionBindingStore();
   sessionBindingStore.loadFromDisk();

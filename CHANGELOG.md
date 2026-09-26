@@ -17,6 +17,7 @@ All notable changes to this project are documented here. Dates use the ISO forma
 - Made the test harness portable across Windows `HOME` and `USERPROFILE` behavior.
 
 ### Fixed
+- Warn at startup when the legacy `opencode-codex-auth` fork is installed: it also registers provider `openai` and can steal requests, producing `404 {"detail":"Not Found"}`. Documented the conflict in `docs/troubleshooting.md`.
 - Parse both numeric and HTTP-date `Retry-After` headers and use a conservative cooldown for malformed values.
 
 ### Notes

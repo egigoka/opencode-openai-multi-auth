@@ -213,6 +213,24 @@ cat ~/.opencode/logs/codex-plugin/request-*-after-transform.json | jq '.body.inp
 
 ## Request Errors
 
+### `404 {"detail":"Not Found"}`
+
+**Cause:** another plugin is serving the `openai` provider instead of this one.
+The legacy `opencode-codex-auth` fork (v1.x) only rewrites `/v1/responses`-style
+paths, so `/backend-api/responses` passes through unchanged and the backend
+returns a bare FastAPI 404 (no `Model not found` prefix).
+
+**Check:**
+```bash
+# Two shims claiming the same provider = conflict
+grep -n 'fork.js' ~/.config/opencode/opencode.json
+ls ~/.local/share/opencode-codex-auth/dist/index.js
+```
+
+**Fix:** enable only one plugin for provider `openai`. Remove
+`"./plugins/codex-auth-fork.js"` from `opencode.json` and restart OpenCode.
+Versions 5.0.8+ also print a startup warning when the legacy install is present.
+
 ### "400 Bad Request"
 
 **Check error details:**
