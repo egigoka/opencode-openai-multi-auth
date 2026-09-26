@@ -224,7 +224,7 @@ returns a bare FastAPI 404 (no `Model not found` prefix).
 ```bash
 # Two shims claiming the same provider = conflict
 grep -n 'fork.js' ~/.config/opencode/opencode.json
-ls ~/.local/share/opencode-codex-auth/dist/index.js
+ls ~/.config/opencode/plugins/codex-auth-fork.js
 ```
 
 **Fix:** enable only one plugin for provider `openai`. Remove

@@ -269,7 +269,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
 
   if (!quietMode && findLegacyCodexAuthFork()) {
     console.warn(
-      '[openai-multi-auth] Conflicting legacy plugin detected at ~/.local/share/opencode-codex-auth. ' +
+      '[openai-multi-auth] Conflicting legacy plugin enabled (plugins/codex-auth-fork.js). ' +
         'It also registers provider "openai" and can serve requests instead of this plugin, ' +
         'causing 404 {"detail":"Not Found"}. Remove "./plugins/codex-auth-fork.js" from opencode.json.',
     );
