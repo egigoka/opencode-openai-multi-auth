@@ -5,6 +5,7 @@
  */
 
 import { CODEX_BASE_URL, URL_PATHS, PLUGIN_VERSION, CODEX_ORIGINATOR } from "./constants.js";
+import { logDebug } from "./logger.js";
 import { release as osRelease } from "node:os";
 
 /** Model info returned from the /models endpoint */
@@ -73,7 +74,7 @@ export async function fetchAvailableModels(
 		});
 
 		if (!response.ok) {
-			console.error(`[openai-codex-plugin] Failed to fetch models: ${response.status}`);
+			logDebug(`[openai-codex-plugin] Failed to fetch models: ${response.status}`);
 			return cached?.models || [];
 		}
 
@@ -85,7 +86,7 @@ export async function fetchAvailableModels(
 
 		return models;
 	} catch (error) {
-		console.error("[openai-codex-plugin] Error fetching models:", error);
+		logDebug("[openai-codex-plugin] Error fetching models:", error);
 		return cached?.models || [];
 	}
 }

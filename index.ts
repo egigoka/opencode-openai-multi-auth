@@ -21,7 +21,7 @@ import {
   HTTP_STATUS,
   MODEL_FALLBACKS,
 } from "./lib/constants.js";
-import { logRequest, logDebug } from "./lib/logger.js";
+import { logRequest, logDebug, logWarn } from "./lib/logger.js";
 import {
   createCodexHeaders,
   extractRequestUrl,
@@ -268,7 +268,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
   await accountManager.importFromOpenCodeAuth();
 
   if (!quietMode && findLegacyCodexAuthFork()) {
-    console.warn(
+    logWarn(
       '[openai-multi-auth] Conflicting legacy plugin enabled (plugins/codex-auth-fork.js). ' +
         'It also registers provider "openai" and can serve requests instead of this plugin, ' +
         'causing 404 {"detail":"Not Found"}. Remove "./plugins/codex-auth-fork.js" from opencode.json.',
@@ -544,6 +544,10 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
           );
         }
 
+        // Accounts already force-refreshed after a 401 in this request chain.
+        // Prevents refresh loops while still retrying fresh tokens once.
+        const forceRefreshedOn401 = new Set<number>();
+
         const executeRequest = async (
           account: ManagedAccount,
           input: Request | string | URL,
@@ -656,7 +660,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
             await codexStatus.updateFromHeaders(account, headersObj);
           } catch (error) {
             if (debugMode) {
-              console.log("[openai-multi-auth] codex-status update failed", error);
+              logDebug("[openai-multi-auth] codex-status update failed", error);
             }
           }
 
@@ -703,7 +707,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
               try {
                 const cloned = response.clone();
                 const body = await cloned.json();
-                console.log(
+                logDebug(
                   `[openai-multi-auth] Rate limit headers: ${JSON.stringify(headersObj)}, body: ${JSON.stringify(body)}, calculated: ${retryAfterMs}ms (${Math.ceil(Math.max(0, retryAfterMs) / 60000)}m)`,
                 );
               } catch {}
@@ -720,6 +724,17 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
           }
 
           if (response.status === HTTP_STATUS.UNAUTHORIZED) {
+            // The token may be revoked but still time-valid, in which case
+            // ensureValidToken skipped the refresh. Try one unconditional
+            // refresh before failing over to the next account.
+            if (!forceRefreshedOn401.has(account.index)) {
+              forceRefreshedOn401.add(account.index);
+              logDebug(`[openai-multi-auth] 401 on account ${account.email || account.index}, force-refreshing token`);
+              const refreshed = await accountManager.forceRefresh(account);
+              if (refreshed) {
+                return executeRequest(account, input, init, sessionKey, retryCount, triedAccountIndices);
+              }
+            }
             accountManager.markRefreshFailed(account, "401 Unauthorized");
             const nextAccount =
               await accountManager.getNextAvailableAccountExcluding(triedAccountIndices, model);
@@ -758,7 +773,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
               
               // Log the error for debugging
               if (debugMode) {
-                console.log(`[openai-multi-auth] 400 error for model ${model} on account ${account.email || account.index} [${account.planType}]: ${JSON.stringify(errorBody)}`);
+                logDebug(`[openai-multi-auth] 400 error for model ${model} on account ${account.email || account.index} [${account.planType}]: ${JSON.stringify(errorBody)}`);
               }
               
               // Check if it's a "model not supported" error
@@ -772,7 +787,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
                 const nextAccount = await accountManager.getNextAvailableAccountExcluding(triedAccountIndices, requestedModel);
                 if (nextAccount) {
                   if (debugMode) {
-                    console.log(`[openai-multi-auth] Model ${requestedModel} not supported on ${account.email || account.index} [${account.planType}], trying ${nextAccount.email || nextAccount.index} [${nextAccount.planType}]`);
+                    logDebug(`[openai-multi-auth] Model ${requestedModel} not supported on ${account.email || account.index} [${account.planType}], trying ${nextAccount.email || nextAccount.index} [${nextAccount.planType}]`);
                   }
                   bindSessionAccount(promptCacheKey, nextAccount);
                   await showModelRetryToast(
@@ -789,7 +804,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
                 const fallbackModel = MODEL_FALLBACKS[requestedModel];
                 if (fallbackModel) {
                   if (debugMode) {
-                    console.log(`[openai-multi-auth] All ${triedAccountIndices.size} accounts tried for ${requestedModel}, falling back to ${fallbackModel}`);
+                    logDebug(`[openai-multi-auth] All ${triedAccountIndices.size} accounts tried for ${requestedModel}, falling back to ${fallbackModel}`);
                   }
                   await showModelFallbackToast(requestedModel, fallbackModel);
                   

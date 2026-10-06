@@ -1,6 +1,7 @@
 import { generatePKCE } from "@openauthjs/openauth/pkce";
 import { randomBytes } from "node:crypto";
 import type { PKCEPair, AuthorizationFlow, TokenResult, ParsedAuthInput, JWTPayload } from "../types.js";
+import { logDebug } from "../logger.js";
 
 // OAuth constants (from openai/codex)
 export const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -83,7 +84,7 @@ export async function exchangeAuthorizationCode(
 	});
 	if (!res.ok) {
 		const text = await res.text().catch(() => "");
-		console.error("[openai-codex-plugin] code->token failed:", res.status, text);
+		logDebug("[openai-codex-plugin] code->token failed:", { status: res.status, text });
 		return { type: "failed" };
 	}
 	const json = (await res.json()) as {
@@ -96,7 +97,7 @@ export async function exchangeAuthorizationCode(
 		!json?.refresh_token ||
 		typeof json?.expires_in !== "number"
 	) {
-		console.error("[openai-codex-plugin] token response missing fields:", json);
+		logDebug("[openai-codex-plugin] token response missing fields:", json);
 		return { type: "failed" };
 	}
 	return {
@@ -176,10 +177,9 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenRes
 
 		if (!response.ok) {
 			const text = await response.text().catch(() => "");
-			console.error(
+			logDebug(
 				"[openai-codex-plugin] Token refresh failed:",
-				response.status,
-				text,
+				{ status: response.status, text },
 			);
 			try {
 				const errorData = JSON.parse(text) as { error?: { code?: string } };
@@ -201,7 +201,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenRes
 			!json?.refresh_token ||
 			typeof json?.expires_in !== "number"
 		) {
-			console.error(
+			logDebug(
 				"[openai-codex-plugin] Token refresh response missing fields:",
 				json,
 			);
@@ -216,7 +216,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenRes
 		};
 	} catch (error) {
 		const err = error as Error;
-		console.error("[openai-codex-plugin] Token refresh error:", err);
+		logDebug("[openai-codex-plugin] Token refresh error:", err);
 		return { type: "failed" };
 	}
 }

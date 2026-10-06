@@ -260,4 +260,45 @@ describe("AccountManager OpenCode auth sync", () => {
     expect(account.parts.refreshToken).toBe("rt-refreshed");
     expect(account.access).toBe(refreshedAccess);
   });
+
+  it("forceRefresh refreshes a time-valid token that ensureValidToken would skip", async () => {
+    const home = mkdtempSync(join(tmpdir(), "manager-force-refresh-valid-"));
+    const refreshedAccess = createAccessToken({
+      accountId: "acct-1",
+      userId: "user-1",
+      email: "local@example.com",
+      tokenId: "force-refreshed-token",
+    });
+    const refreshMock = vi.fn().mockResolvedValue({
+      type: "success",
+      access: refreshedAccess,
+      refresh: "rt-force-refreshed",
+      expires: Date.now() + 90_000,
+    });
+    const manager = await createManager(home, refreshMock);
+    await manager.loadFromDisk();
+
+    const localAccess = createAccessToken({
+      accountId: "acct-1",
+      userId: "user-1",
+      email: "local@example.com",
+      tokenId: "local-token",
+    });
+
+    // Time-valid token: ensureValidToken must skip the refresh.
+    const account = await manager.addAccount(undefined, "rt-local", localAccess, Date.now() + 3_600_000);
+    const skipped = await manager.ensureValidToken(account);
+
+    expect(skipped).toBe(true);
+    expect(refreshMock).not.toHaveBeenCalled();
+
+    // forceRefresh must refresh anyway (recovers revoked-but-time-valid tokens).
+    const ok = await manager.forceRefresh(account);
+
+    expect(ok).toBe(true);
+    expect(refreshMock).toHaveBeenCalledOnce();
+    expect(refreshMock).toHaveBeenCalledWith("rt-local");
+    expect(account.parts.refreshToken).toBe("rt-force-refreshed");
+    expect(account.access).toBe(refreshedAccess);
+  });
 });

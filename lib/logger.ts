@@ -4,18 +4,13 @@ import { homedir } from "node:os";
 import { PLUGIN_NAME } from "./constants.js";
 import { ensureSecureDir, ensureSecureFile } from "./secure-file.js";
 
-// Logging configuration
+// Logging configuration (all console output gated: silent unless explicitly enabled)
 export const LOGGING_ENABLED = process.env.ENABLE_PLUGIN_REQUEST_LOGGING === "1";
-export const DEBUG_ENABLED = process.env.DEBUG_CODEX_PLUGIN === "1" || LOGGING_ENABLED;
+export const DEBUG_ENABLED =
+	process.env.DEBUG_CODEX_PLUGIN === "1" ||
+	process.env.OPENCODE_OPENAI_DEBUG === "1" ||
+	LOGGING_ENABLED;
 const LOG_DIR = join(homedir(), ".opencode", "logs", "codex-plugin");
-
-// Log startup message about logging state
-if (LOGGING_ENABLED) {
-	console.log(`[${PLUGIN_NAME}] Request logging ENABLED - logs will be saved to:`, LOG_DIR);
-}
-if (DEBUG_ENABLED && !LOGGING_ENABLED) {
-	console.log(`[${PLUGIN_NAME}] Debug logging ENABLED`);
-}
 
 let requestCounter = 0;
 
@@ -81,10 +76,8 @@ export function logRequest(stage: string, data: Record<string, unknown>): void {
 			{ encoding: "utf8", mode: 0o600 },
 		);
 		ensureSecureFile(filename);
-		console.log(`[${PLUGIN_NAME}] Logged ${stage} to ${filename}`);
-	} catch (e) {
-		const error = e as Error;
-		console.error(`[${PLUGIN_NAME}] Failed to write log:`, error.message);
+	} catch {
+		// Silent: logging must never pollute plugin output.
 	}
 }
 

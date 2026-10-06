@@ -13,6 +13,7 @@ import type {
 } from "./types.js";
 import { DEFAULT_MULTI_ACCOUNT_CONFIG } from "./types.js";
 import { ensureSecureDir, ensureSecureFile, writeJsonSecure } from "../secure-file.js";
+import { logDebug, logWarn } from "../logger.js";
 
 const ACCOUNTS_FILE = join(
   homedir(),
@@ -225,11 +226,9 @@ export class AccountManager {
       existing.consecutiveFailures = 0;
       await this.saveToDisk();
 
-      if (!this.config.quietMode) {
-        console.log(
-          `[openai-multi-auth] Updated account ${extractedEmail || existing.index}`,
-        );
-      }
+      logDebug(
+        `[openai-multi-auth] Updated account ${extractedEmail || existing.index}`,
+      );
       this.strategyInitialized = false;
       return existing;
     }
@@ -253,7 +252,7 @@ export class AccountManager {
     await this.saveToDisk();
 
     if (!this.config.quietMode) {
-      console.log(
+      logDebug(
         `[openai-multi-auth] Added account ${extractedEmail || account.index}`,
       );
     }
@@ -503,7 +502,7 @@ export class AccountManager {
 
     if (this.config.debug) {
       const identifier = account.email || `account-${account.index}`;
-      console.log(
+      logDebug(
         `[openai-multi-auth] ${identifier} rate limited until ${new Date(resetTime).toISOString()}`,
       );
     }
@@ -543,11 +542,9 @@ export class AccountManager {
 
       this.saveToDisk();
 
-      if (!this.config.quietMode) {
-        console.log(
-          `[openai-multi-auth] Removed account ${account.email || account.index}`,
-        );
-      }
+      logDebug(
+        `[openai-multi-auth] Removed account ${account.email || account.index}`,
+      );
     }
   }
 
@@ -594,63 +591,79 @@ export class AccountManager {
     }
 
     account.isRefreshing = true;
-    account.refreshPromise = (async () => {
-      try {
-        const openCodeSnapshot = this.readOpenCodeAuthSnapshot();
-        if (openCodeSnapshot && this.isSameAccount(account, openCodeSnapshot)) {
-          const sameAccess = openCodeSnapshot.access === account.access;
-          const sameRefresh = openCodeSnapshot.refresh === account.parts.refreshToken;
-
-          if (!sameAccess || !sameRefresh) {
-            await this.addAccount(
-              undefined,
-              openCodeSnapshot.refresh,
-              openCodeSnapshot.access,
-              openCodeSnapshot.expires,
-            );
-          } else if (openCodeSnapshot.expires) {
-            account.expires = openCodeSnapshot.expires;
-            await this.saveToDisk();
-          }
-
-          account.consecutiveFailures = 0;
-          account.lastRefreshError = undefined;
-          return true;
-        }
-
-        const result = await refreshAccessToken(account.parts.refreshToken);
-
-        if (result.type === "success") {
-          await this.updateAccountTokens(
-            account,
-            result.access,
-            result.refresh,
-            result.expires,
-          );
-          return true;
-        }
-
-        const errorCode = result.code;
-        if (errorCode === "refresh_token_reused" || errorCode === "invalid_grant") {
-          this.markRefreshFailed(account, `Token invalid: ${errorCode}. Please re-authenticate.`);
-          account.consecutiveFailures = 10;
-          if (!this.config.quietMode) {
-            console.error(`[openai-multi-auth] Account ${account.email || account.index} needs re-authentication (${errorCode})`);
-          }
-        } else {
-          this.markRefreshFailed(account, "Token refresh failed");
-        }
-        return false;
-      } catch (err) {
-        this.markRefreshFailed(account, String(err));
-        return false;
-      } finally {
-        account.isRefreshing = false;
-        account.refreshPromise = undefined;
-      }
-    })();
+    account.refreshPromise = this.runRefresh(account);
 
     return account.refreshPromise;
+  }
+
+  /**
+   * Unconditionally refresh the account's access token, even if the stored
+   * token has not expired yet. Used to recover from 401 responses caused by
+   * revoked (but time-valid) tokens, which ensureValidToken would skip.
+   */
+  async forceRefresh(account: ManagedAccount): Promise<boolean> {
+    if (account.isRefreshing && account.refreshPromise) {
+      return account.refreshPromise;
+    }
+
+    account.isRefreshing = true;
+    account.refreshPromise = this.runRefresh(account);
+
+    return account.refreshPromise;
+  }
+
+  private async runRefresh(account: ManagedAccount): Promise<boolean> {
+    try {
+      const openCodeSnapshot = this.readOpenCodeAuthSnapshot();
+      if (openCodeSnapshot && this.isSameAccount(account, openCodeSnapshot)) {
+        const sameAccess = openCodeSnapshot.access === account.access;
+        const sameRefresh = openCodeSnapshot.refresh === account.parts.refreshToken;
+
+        if (!sameAccess || !sameRefresh) {
+          await this.addAccount(
+            undefined,
+            openCodeSnapshot.refresh,
+            openCodeSnapshot.access,
+            openCodeSnapshot.expires,
+          );
+        } else if (openCodeSnapshot.expires) {
+          account.expires = openCodeSnapshot.expires;
+          await this.saveToDisk();
+        }
+
+        account.consecutiveFailures = 0;
+        account.lastRefreshError = undefined;
+        return true;
+      }
+
+      const result = await refreshAccessToken(account.parts.refreshToken);
+
+      if (result.type === "success") {
+        await this.updateAccountTokens(
+          account,
+          result.access,
+          result.refresh,
+          result.expires,
+        );
+        return true;
+      }
+
+      const errorCode = result.code;
+      if (errorCode === "refresh_token_reused" || errorCode === "invalid_grant") {
+        this.markRefreshFailed(account, `Token invalid: ${errorCode}. Please re-authenticate.`);
+        account.consecutiveFailures = 10;
+        logWarn(`[openai-multi-auth] Account ${account.email || account.index} needs re-authentication (${errorCode})`);
+      } else {
+        this.markRefreshFailed(account, "Token refresh failed");
+      }
+      return false;
+    } catch (err) {
+      this.markRefreshFailed(account, String(err));
+      return false;
+    } finally {
+      account.isRefreshing = false;
+      account.refreshPromise = undefined;
+    }
   }
 
   getActiveAccount(): ManagedAccount | null {
